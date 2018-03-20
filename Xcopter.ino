@@ -235,6 +235,10 @@ float KRollRateP=1.3,KRollRateI=2.0,KRollRateD=0.025,KRollP=2.2;
 float KYawRateP=3.0,KYawRateI=3.0,KYawRateD=0.04,KYawP=2.0;
 float KPitchRateP=1.5,KPitchRateI=2.3,KPitchRateD=0.025,KPitchP=2.5;
 float KRollRateP=1.5,KRollRateI=2.3,KRollRateD=0.025,KRollP=2.5;
+
+float KYawRateP=2.6,KYawRateI=2.6,KYawRateD=0.04,KYawP=1.8;
+float KPitchRateP=1.3,KPitchRateI=2.0,KPitchRateD=0.025,KPitchP=2.2;
+float KRollRateP=1.3,KRollRateI=2.0,KRollRateD=0.025,KRollP=2.2;
 */
 
 float Throttle = 0;
@@ -436,19 +440,17 @@ void loop() {
               Serial.print(" \t ");
               Serial.print(yprRate[2]);
               Serial.print(" \t ");
+              Serial.print(accescaled[0]);
+              Serial.print(" \t ");
+              Serial.print(accescaled[1]);
+              Serial.print(" \t ");
+              Serial.print(accescaled[2]);
+              Serial.print(" \t ");
+              Serial.print(Altit);
+              Serial.print(" \t ");
               Serial.print(vzreal);
               Serial.print(" \t ");
-              /*Serial.print(Temperature);
-              Serial.print(" \t ");
-              Serial.print(Pressure);
-              Serial.print(" \t ");
-              Serial.print(baseline);
-              Serial.print(" \t ");*/
-              Serial.print(baroheight);
-              Serial.print(" \t ");
-              Serial.print(ultraheight);
-              Serial.print(" \t ");
-              Serial.println(Altit);
+              Serial.println(azreal);
         #endif
         }
 
@@ -477,7 +479,7 @@ void loop() {
          dt = ((float)(micros() - pidlooplast)) / 1000000;
          pidlooplast = micros();
           
-         //Serial.print("dt = ");Serial.println(dt,5);
+         //Serial.print("dt = ");Serial.println(dt*1000,5);
          dt = 0.01;
 
          if( Throttle > 970 )
@@ -731,14 +733,15 @@ void loop() {
             if( bmpneed !=0 )
             {
                 #define lpbaro 0.2
-                if( bmplast == 0 )
+                #define lpbaroground 0.99
+                if( baroheightlast == 0 )
                 {
                   GroundPressure = Pressure;
                   PressureAveraged = Pressure;
                 }
                 if( Altit <= 0.02 )
                 {
-                  GroundPressure = GroundPressure * lpbaro + Pressure * ( 1-lpbaro );
+                  GroundPressure = GroundPressure * lpbaroground + Pressure * ( 1-lpbaroground );
                 }
                 PressureAveraged = PressureAveraged * lpbaro + Pressure * (1-lpbaro);
                 baroheight = 44330 * ( 1 - pow(PressureAveraged/GroundPressure,1/5.255) );
@@ -747,7 +750,6 @@ void loop() {
                 {
                   baroheight = 0;
                 }
-              
               bmpneed  = 30;
               bmpstate = 0;
               baroheightlast = micros();
@@ -811,7 +813,8 @@ void loop() {
  */
 
 /*
- * any matrix 2 x 2  D is ___         ___
+ * any matrix 2 x 2  D is 
+ *                   ___         ___
  *                   |               |
  *                   |   D00    D01  |
  *                   |   D10    D11  |
@@ -828,11 +831,10 @@ void loop() {
 
 
 float X0=0,X1=0;            // estimated values
-float X1lowpassed = 0;
-float P00=0.00031,P01=0.000001,P10=0.00099,P11=0.00099;    // post  errors
+float P00=0.0047617,P01=0.0000353,P10=0.0003248,P11=0.0005830;    // post  errors
 
-float R00=0.9,R01=0.0,R10=0.0,R11=0.01;    // measurement covariance variance matrix
-float Q00=0.00015,Q01=0,Q10=0,Q11=0.1;     // model estimation covariance variance matrix
+float R00=0.07,R01=0,R10=0,R11=0.0005;      // measurement covariance variance matrix
+float Q00=0.00001,Q01=0,Q10=0,Q11=0.001;     // model estimation covariance variance matrix
 
 // previous safe values
 /*
@@ -841,23 +843,15 @@ float Q00=0.000001,Q01=0.0,Q10=0.0,Q11=0.75;     // model estimation covariance 
 
 */
 
-unsigned long int lastcall = 0;
-float lowpassed[3] = {};
-float getaltitude()
-{    
 
-  /*Serial.print( acce[0] );
-  Serial.print( " \t \t ");
-  Serial.print( acce[1] );
-  Serial.print( " \t \t ");
-  Serial.println( acce[2] );
-  Serial.println(accez * 100);*/
-  
+unsigned long int lastcall = 0;
+float getaltitude()
+{ 
   float dtlocal = ( (float)(micros() - lastcall) ) / 1000000;
 
   float X_0,X_1;          // model based prediction
-  X_0 = X0 + X1 * dtlocal; //+ 0.5 * azreal * dtlocal * dtlocal;
-  X_1 = X1; //+ azreal * dtlocal;
+  X_0 = X0 + X1 * dtlocal;
+  X_1 = X1;
 
   float T00,T01,T10,T11;    // Temporary matrix
   T00 = P00 + ( P01 + P10 ) * dtlocal + P11 * dtlocal * dtlocal + Q00;
@@ -874,7 +868,7 @@ float getaltitude()
   float Z0,Z1;              // measured values
   if( Altit < 1.2 && zcos > 0.9 ) // zcos is cosine of angle between local z axis and global z axis
   {
-    Z0 = baroheight * 0.8 + ultraheight * 0.2;  // very cheap idea to have high accuracy for low heights by complementary filter
+    Z0 = baroheight * 0.75 + ultraheight * 0.25;  // very cheap idea to have high accuracy for low heights by complementary filter
   }
   else
   {
@@ -905,21 +899,11 @@ float getaltitude()
   P00 = P_00 * ( 1 - K00 ) + P_10 * ( -K01 );
   P01 = P_01 * ( 1 - K00 ) + P_11 * ( -K01 );
   P10 = P_00 * ( -K01 ) + P_10 * ( 1 - K11 );
-  P11 = P_01 * ( -K01 ) + P_11 * ( 1 - K11 );;
-
+  P11 = P_01 * ( -K01 ) + P_11 * ( 1 - K11 );
+  
   Altit  = X0;
   vzreal = X1;
   azreal = accez;
-
-  Serial.print(0);
-  Serial.print(" ");
-  Serial.print(200);
-  Serial.print(" ");
-  Serial.print(-80);
-  Serial.print(" ");
-  Serial.print(Altit * 100);
-  Serial.print(" ");
-  Serial.println(vzreal * 100);
-  
+ 
   lastcall = micros();
 }
