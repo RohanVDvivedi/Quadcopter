@@ -1,3 +1,4 @@
+// 3:39 pm 31 mar'18
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -82,6 +83,7 @@ void updateultraheight()
   ultralast = micros();
 }
 
+unsigned long long int botinitialized = 0;
 void setup()
 {
     Wire.begin();
@@ -176,6 +178,7 @@ void setup()
     delay(5000);
 
     initKPKIKD();
+    botinitialized = micros();
 }
 
 /* PID Variables
@@ -732,14 +735,14 @@ void loop() {
             bmpneed = bmp.getPressure(Pressure,Temperature);
             if( bmpneed !=0 )
             {
-                #define lpbaro 0.2
+                #define lpbaro 0.7
                 #define lpbaroground 0.99
                 if( baroheightlast == 0 )
                 {
                   GroundPressure = Pressure;
                   PressureAveraged = Pressure;
                 }
-                if( Altit <= 0.02 )
+                if( Altit <= 0.02 && micros()-botinitialized <= 5000000)
                 {
                   GroundPressure = GroundPressure * lpbaroground + Pressure * ( 1-lpbaroground );
                 }
@@ -833,13 +836,13 @@ void loop() {
 float X0=0,X1=0;            // estimated values
 float P00=0.0047617,P01=0.0000353,P10=0.0003248,P11=0.0005830;    // post  errors
 
-float R00=0.07,R01=0,R10=0,R11=0.0005;      // measurement covariance variance matrix
-float Q00=0.00001,Q01=0,Q10=0,Q11=0.001;     // model estimation covariance variance matrix
+float R00=0.06,R01=0,R10=0,R11=0.00085;      // measurement covariance variance matrix
+float Q00=0.00005,Q01=0,Q10=0,Q11=0.00005;     // model estimation covariance variance matrix
 
 // previous safe values
 /*
-float R00=0.010000,R01=0.0,R10=0.0,R11=0.0002;    // measurement covariance variuance matrix
-float Q00=0.000001,Q01=0.0,Q10=0.0,Q11=0.75;     // model estimation covariance variance matrix
+float R00=0.06,R01=0,R10=0,R11=0.0005;      // measurement covariance variance matrix
+float Q00=0.00005,Q01=0,Q10=0,Q11=0.00005;     // model estimation covariance variance matrix
 
 */
 
@@ -868,7 +871,8 @@ float getaltitude()
   float Z0,Z1;              // measured values
   if( Altit < 1.2 && zcos > 0.9 ) // zcos is cosine of angle between local z axis and global z axis
   {
-    Z0 = baroheight * 0.75 + ultraheight * 0.25;  // very cheap idea to have high accuracy for low heights by complementary filter
+    float fraction = Altit / 1.5;
+    Z0 = baroheight * fraction + ultraheight * (1 - fraction) ;  // very cheap idea to have high accuracy for low heights by complementary filter
   }
   else
   {
@@ -904,6 +908,18 @@ float getaltitude()
   Altit  = X0;
   vzreal = X1;
   azreal = accez;
+
+  Serial.print(0);
+  Serial.print(" ");
+  Serial.print(-50);
+  Serial.print(" ");
+  Serial.print(50);
+  Serial.print(" ");
+  Serial.print(Altit * 100);
+  Serial.print(" ");
+  Serial.println(vzreal * 100);
+  /*Serial.print(" ");
+  Serial.println(azreal * 100);*/
  
   lastcall = micros();
 }
