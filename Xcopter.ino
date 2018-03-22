@@ -1,4 +1,4 @@
-// 3:39 pm 31 mar'18
+// 10:39 am 22 mar'18
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -385,6 +385,13 @@ float temp = 0;
 // Kalman fikter function for Altit, vzreal and azreal estimation
 float getaltitude();
 
+float maximum4( float f1 , float f2 , float f3 , float f4 )
+{
+  f1 = ( ( f1 > f3 ) ? f1 : f3 );
+  f2 = ( ( f2 > f4 ) ? f2 : f4 );
+  return ( ( f1 > f2 ) ? f1 : f2 ) ;
+}
+
 
 // Yes I copied this comment, sue me
 // ================================================================
@@ -531,39 +538,40 @@ void loop() {
               PitchRatePID  =  PitchRateP  +  PitchRateI  +  PitchRateD  ;
               RollRatePID   =  RollRateP   +  RollRateI   +  RollRateD   ;
         
-              if( YawRatePID <= -150 || YawRatePID >= 150 )
+              if( YawRatePID <= -300 || YawRatePID >= 300 )
               {
-                if( YawRatePID > 0 ){YawRatePID = 150;}
-                else{YawRatePID = -150;}
+                if( YawRatePID > 0 ){YawRatePID = 300;}
+                else{YawRatePID = -300;}
               }
         
-              if( PitchRatePID <= -150 || PitchRatePID >= 150 )
+              if( PitchRatePID <= -300 || PitchRatePID >= 300 )
               {
-                if( PitchRatePID > 0 ){PitchRatePID = 150;}
-                else{PitchRatePID = -150;}
+                if( PitchRatePID > 0 ){PitchRatePID = 300;}
+                else{PitchRatePID = -300;}
               }
         
-              if( RollRatePID <= -150 || RollRatePID >= 150 )
+              if( RollRatePID <= -300 || RollRatePID >= 300 )
               {
-                if( RollRatePID > 0 ){RollRatePID = 150;}
-                else{RollRatePID = -150;}
+                if( RollRatePID > 0 ){RollRatePID = 300;}
+                else{RollRatePID = -300;}
               }
 
-              LeftFrontMotor = Throttle + PitchRatePID - RollRatePID + YawRatePID;
-              if( LeftFrontMotor > 2000 ){ LeftFrontMotor = 2000; }
-              else if( LeftFrontMotor < 970 ){ LeftFrontMotor = 970; }
-
+              LeftFrontMotor  = Throttle + PitchRatePID - RollRatePID + YawRatePID;
               RightFrontMotor = Throttle + PitchRatePID + RollRatePID - YawRatePID;
-              if( RightFrontMotor > 2000 ){ RightFrontMotor = 2000; }
-              else if( RightFrontMotor < 970 ){ RightFrontMotor = 970; }
+              LeftBackMotor   = Throttle - PitchRatePID - RollRatePID - YawRatePID;
+              RightBackMotor  = Throttle - PitchRatePID + RollRatePID + YawRatePID;
 
-              LeftBackMotor = Throttle - PitchRatePID - RollRatePID - YawRatePID;
-              if( LeftBackMotor > 2000 ){ LeftBackMotor = 2000; }
-              else if( LeftBackMotor < 970 ){ LeftBackMotor = 970; }
+              float maxval = maximum4(LeftFrontMotor,RightFrontMotor,LeftBackMotor,RightBackMotor );
 
-              RightBackMotor = Throttle - PitchRatePID + RollRatePID + YawRatePID;
-              if( RightBackMotor > 2000 ){ RightBackMotor = 2000; }
-              else if( RightBackMotor < 970 ){ RightBackMotor = 970; }
+              if( maxval > 1970 )
+              {
+                float difference = maxval - 1970;
+                LeftFrontMotor  -= difference;
+                RightFrontMotor -= difference;
+                LeftBackMotor   -= difference;
+                RightBackMotor  -= difference;
+              }
+              
           }
           else
           {
@@ -909,7 +917,7 @@ float getaltitude()
   vzreal = X1;
   azreal = accez;
 
-  Serial.print(0);
+  /*Serial.print(0);
   Serial.print(" ");
   Serial.print(-50);
   Serial.print(" ");
@@ -917,7 +925,7 @@ float getaltitude()
   Serial.print(" ");
   Serial.print(Altit * 100);
   Serial.print(" ");
-  Serial.println(vzreal * 100);
+  Serial.println(vzreal * 100);*/
   /*Serial.print(" ");
   Serial.println(azreal * 100);*/
  
