@@ -1,4 +1,4 @@
-// 10:39 am 22 mar'18
+// 11:27 am 24 mar'18
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -206,11 +206,6 @@ float yprRate[3];
 // acceleration in global z axis scaled for m/s^2
 float accez;
 
-// acceleration , velocity and Altitude estimated values as given by the Kalman filter, the function written at last
-float azreal;
-float vzreal;
-float Altit;
-
 float YawRatePID;
 float PitchRatePID;
 float RollRatePID;
@@ -230,9 +225,9 @@ float YawRateErrorTotal,PitchRateErrorTotal,RollRateErrorTotal;
 // #define printMPUDMPdata
  
 // manipulate
-float KYawRateP=2.6,KYawRateI=2.6,KYawRateD=0.04,KYawP=1.8;
-float KPitchRateP=1.3,KPitchRateI=2.0,KPitchRateD=0.025,KPitchP=2.2;
-float KRollRateP=1.3,KRollRateI=2.0,KRollRateD=0.025,KRollP=2.2;
+float KYawRateP=3.0,KYawRateI=2.6,KYawRateD=0.04,KYawP=2.0;
+float KPitchRateP=1.7,KPitchRateI=2.0,KPitchRateD=0.03,KPitchP=2.5;
+float KRollRateP=1.7,KRollRateI=2.0,KRollRateD=0.03,KRollP=2.5;
 
 /*
 float KYawRateP=3.0,KYawRateI=3.0,KYawRateD=0.04,KYawP=2.0;
@@ -256,6 +251,22 @@ float LeftFrontMotor=900,RightFrontMotor=900,LeftBackMotor=900,RightBackMotor=90
 
 float dt;
 int pr = 0;
+
+// Altitude PID variables and prameters below
+
+// acceleration , velocity and Altitude estimated values as given by the Kalman filter, the function written at last
+float azreal;
+float vzreal;
+float Altit;
+
+float vzrealReq;
+
+float vzrealError = 0;
+float vzrealErrorTotal = 0;
+
+float DifferentialThrottle = 0;
+
+// Altitude PID variables and prameters above
 
 
 unsigned long int pidlooplast=0;
@@ -383,7 +394,8 @@ unsigned char turnoff = 0;
 float temp = 0;
 
 // Kalman fikter function for Altit, vzreal and azreal estimation
-float getaltitude();
+void updateAltitude();   // called after getting barometer data
+void predictAltitude();  // called after getting acceleration data
 
 float maximum4( float f1 , float f2 , float f3 , float f4 )
 {
@@ -435,7 +447,7 @@ void loop() {
         if( yprRate[1] <= 1 && yprRate[1] >= -1 ){yprRate[1] = 0;}
         if( yprRate[2] <= 1 && yprRate[2] >= -1 ){yprRate[2] = 0;}
 
-        getaltitude();
+        predictAltitude();
             
         #ifdef printMPUDMPdata
               Serial.print(ypr[0]);
@@ -469,9 +481,10 @@ void loop() {
         if( turnoff == 0 )
         {
            Throttle = ( ( ((float)(data[1] & 0x00ff)) * 4.3 ) * 0.7 ) + 900 ;
-           YawReq      +=  ((data[5])/30.0) ; 
-           PitchReq     = ((data[3]*2.5)/3.0)  + PitchTrim ;
-           RollReq      = ((data[2]*2.5)/3.0)  + RollTrim  ;
+           vzrealReq  =  ((data[6]*1.0)/100.0);
+           YawReq    +=  ((data[5])/30.0) ; 
+           PitchReq   =  ((data[3]*2.5)/3.0)  + PitchTrim ;
+           RollReq    =  ((data[2]*2.5)/3.0)  + RollTrim  ;
 
            if( YawReq >= 180 ){ YawReq = YawReq - 360; }
            else if( YawReq <= -180 ){ YawReq = YawReq + 360; }
@@ -482,6 +495,7 @@ void loop() {
            YawReq = YawReq;
            PitchReq = 0;
            RollReq = 0;
+           vzrealReq = 0;
          }
 
          while( micros() - pidlooplast < 10000 ){}
@@ -555,11 +569,17 @@ void loop() {
                 if( RollRatePID > 0 ){RollRatePID = 300;}
                 else{RollRatePID = -300;}
               }
+              
+              if( DifferentialThrottle <= -120 || DifferentialThrottle >= 120 )
+              {
+                if( DifferentialThrottle > 0 ){DifferentialThrottle = 120;}
+                else{DifferentialThrottle = -120;}
+              }
 
-              LeftFrontMotor  = Throttle + PitchRatePID - RollRatePID + YawRatePID;
-              RightFrontMotor = Throttle + PitchRatePID + RollRatePID - YawRatePID;
-              LeftBackMotor   = Throttle - PitchRatePID - RollRatePID - YawRatePID;
-              RightBackMotor  = Throttle - PitchRatePID + RollRatePID + YawRatePID;
+              LeftFrontMotor  = Throttle + PitchRatePID - RollRatePID + YawRatePID + DifferentialThrottle;
+              RightFrontMotor = Throttle + PitchRatePID + RollRatePID - YawRatePID + DifferentialThrottle;
+              LeftBackMotor   = Throttle - PitchRatePID - RollRatePID - YawRatePID + DifferentialThrottle;
+              RightBackMotor  = Throttle - PitchRatePID + RollRatePID + YawRatePID + DifferentialThrottle;
 
               float maxval = maximum4(LeftFrontMotor,RightFrontMotor,LeftBackMotor,RightBackMotor );
 
@@ -579,6 +599,8 @@ void loop() {
             PitchError = 0;
             RollError  = 0;
             
+            vzrealError = 0;vzrealErrorTotal = 0;
+            
             YawRateError   = 0;YawRateErrorForDerivative   = 0;YawRateErrorForDerivativeOld   = 0;
             PitchRateError = 0;PitchRateErrorForDerivative = 0;PitchRateErrorForDerivativeOld = 0;
             RollRateError  = 0;RollRateErrorForDerivative  = 0;RollRateErrorForDerivativeOld  = 0;
@@ -590,6 +612,7 @@ void loop() {
             YawRatePID   = 0;
             PitchRatePID = 0;
             RollRatePID  = 0;
+            DifferentialThrottle = 0; 
 
             LeftFrontMotor  = Throttle;
             RightFrontMotor = Throttle;
@@ -597,6 +620,7 @@ void loop() {
             RightBackMotor  = Throttle;
 
             YawReq = ypr[0];
+            vzrealReq = 0;
           }
           
           MotorLeftFront .writeMicroseconds ( LeftFrontMotor  );
@@ -756,6 +780,8 @@ void loop() {
                 }
                 PressureAveraged = PressureAveraged * lpbaro + Pressure * (1-lpbaro);
                 baroheight = 44330 * ( 1 - pow(PressureAveraged/GroundPressure,1/5.255) );
+
+                updateAltitude();
                 
                 if( baroheight == NAN )
                 {
@@ -840,94 +866,93 @@ void loop() {
  *                    |___     ___|
  */
 
-
-float X0=0,X1=0;            // estimated values
-float P00=0.0047617,P01=0.0000353,P10=0.0003248,P11=0.0005830;    // post  errors
-
-float R00=0.06,R01=0,R10=0,R11=0.00085;      // measurement covariance variance matrix
-float Q00=0.00005,Q01=0,Q10=0,Q11=0.00005;     // model estimation covariance variance matrix
-
-// previous safe values
-/*
-float R00=0.06,R01=0,R10=0,R11=0.0005;      // measurement covariance variance matrix
-float Q00=0.00005,Q01=0,Q10=0,Q11=0.00005;     // model estimation covariance variance matrix
-
-*/
-
-
 unsigned long int lastcall = 0;
-float getaltitude()
-{ 
-  float dtlocal = ( (float)(micros() - lastcall) ) / 1000000;
-
-  float X_0,X_1;          // model based prediction
-  X_0 = X0 + X1 * dtlocal;
-  X_1 = X1;
+float P_00,P_01,P_10,P_11;// prior errors
+float X_0,X_1;            // model estimates
+float Q = 0.03;           // accelerometer noise
+void predictAltitude()
+{
+  float dtlocal = ((float)( micros() - lastcall )) / 1000000 ;
+  if( lastcall == 0 )
+  {
+    dtlocal = 0;
+  }
+  
+  azreal = accez;
+  X_1    = X_1 * 0.99 + azreal * dtlocal;
+  vzreal = X_1;
+  X_0    = X_0 + X_1 * dtlocal + 0.5 * azreal * dtlocal * dtlocal;
+  Altit  = X_0;
 
   float T00,T01,T10,T11;    // Temporary matrix
-  T00 = P00 + ( P01 + P10 ) * dtlocal + P11 * dtlocal * dtlocal + Q00;
-  T01 = P01 + P11 * dtlocal + Q01;
-  T10 = P10 + P11 * dtlocal + Q11;
-  T11 = P11 + Q11;
+  T00 = P_00 + ( P_01 + P_10 ) * dtlocal + P_11 * dtlocal * dtlocal + Q;
+  T01 = P_01 + P_11 * dtlocal;
+  T10 = P_10 + P_11 * dtlocal;
+  T11 = P_11 + Q;
 
-  float P_00,P_01,P_10,P_11;// prior errors
   P_00 = T00;
   P_01 = T01;
   P_10 = T10;
   P_11 = T11;
+  
+  lastcall = micros();
 
-  float Z0,Z1;              // measured values
-  if( Altit < 1.2 && zcos > 0.9 ) // zcos is cosine of angle between local z axis and global z axis
+  Serial.print  (-20);
+  Serial.print  (" ");
+  Serial.print  ( 0 );
+  Serial.print  (" ");
+  Serial.print  (+20);
+  Serial.print  (" ");
+  Serial.print  (Altit  * 100);
+  Serial.print  (" ");
+  Serial.print  (vzreal * 100);
+  Serial.print  (" ");
+  //Serial.print  (azreal * 100);
+  Serial.print  (" ");
+  //Serial.print  (dtlocal,10);
+  Serial.println();
+}
+
+float X0,X1;           // sateextimations
+float P00,P01,P10,P11; // state estimation errors
+float R = 1.5;        // noise from arometer
+
+void updateAltitude()
+{
+  float Z0;
+  if( Altit <= 1.5  && zcos > 0.2)
   {
-    float fraction = Altit / 1.5;
-    Z0 = baroheight * fraction + ultraheight * (1 - fraction) ;  // very cheap idea to have high accuracy for low heights by complementary filter
+    float fraction = pow((Altit / 1.5),2);
+    Z0 = baroheight * fraction + ultraheight * ( 1 - fraction );
+    R = 0.003;
+    Q = 0.03;
   }
   else
   {
     Z0 = baroheight;
+    R = 1.5;
+    Q = 0.03;
   }
-  Z1 = X1 + accez * dtlocal;
+  float Y0 = Z0 - X_0;
 
-  float Y0,Y1;              // Innovation
-  Y0 = Z0 - X_0;
-  Y1 = Z1 - X_1;
+  float K00 = P_00 / (P_00 + R);
+  float K10 = P_10 / (P_00 + R);
 
-  T00 = T00 + R00;
-  T01 = T01 + R01;
-  T10 = T10 + R10;
-  T11 = T11 + R11;
+  X0 = X_0 + K00 * Y0;
+  X1 = X_1 + K10 * Y0;
 
-  float Tinvmod = T00 * T11 - T01 * T10;
+  P00 = P_00 * ( 1 - K00 );
+  P01 = P_01 * ( 1 - K00 );
+  P10 = P_00 * ( -K10 ) + P_10;
+  P11 = P_10 * ( -K10 ) + P_11;
 
-  float K00,K01,K10,K11;    // Kalman Gain matrix
-  K00 = ( P_00 * T11 - P_01 * T10 ) / Tinvmod;
-  K01 = ( P_01 * T00 - P_00 * T01 ) / Tinvmod;
-  K10 = ( P_10 * T11 - P_11 * T10 ) / Tinvmod;
-  K11 = ( P_11 * T00 - P_10 * T01 ) / Tinvmod;
-
-  X0 = X_0 + K00 * Y0 + K01 * Y1;
-  X1 = X_1 + K10 * Y0 + K11 * Y1;
-
-  P00 = P_00 * ( 1 - K00 ) + P_10 * ( -K01 );
-  P01 = P_01 * ( 1 - K00 ) + P_11 * ( -K01 );
-  P10 = P_00 * ( -K01 ) + P_10 * ( 1 - K11 );
-  P11 = P_01 * ( -K01 ) + P_11 * ( 1 - K11 );
-  
   Altit  = X0;
   vzreal = X1;
-  azreal = accez;
 
-  /*Serial.print(0);
-  Serial.print(" ");
-  Serial.print(-50);
-  Serial.print(" ");
-  Serial.print(50);
-  Serial.print(" ");
-  Serial.print(Altit * 100);
-  Serial.print(" ");
-  Serial.println(vzreal * 100);*/
-  /*Serial.print(" ");
-  Serial.println(azreal * 100);*/
- 
-  lastcall = micros();
+  X_0 = X0;
+  X_1 = X1;
+  P_00 = P00;
+  P_01 = P01;
+  P_10 = P10;
+  P_11 = P11;
 }
