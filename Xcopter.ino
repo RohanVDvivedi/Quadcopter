@@ -1,4 +1,4 @@
-// 11:27 am 24 mar'18
+// 2:17 pm 25 mar'18
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -220,8 +220,9 @@ float YawRateErrorForDerivative,PitchRateErrorForDerivative,RollRateErrorForDeri
 float YawRateErrorForDerivativeOld,PitchRateErrorForDerivativeOld,RollRateErrorForDerivativeOld;
 float YawRateErrorTotal,PitchRateErrorTotal,RollRateErrorTotal;
 
- #define TuningOff
-// #define TuningRadio
+// #define TuningOff
+// #define TuningRadioAttitude
+ #define TuningRadioAltitude
 // #define printMPUDMPdata
  
 // manipulate
@@ -260,7 +261,18 @@ float vzreal;
 float Altit;
 
 float vzrealReq;
+float AltitReq;
 
+float KvzrealP = 150.0,KvzrealI = 80.0,KvzrealD = 20.0;
+float KAltitP = 1.0;
+
+float vzrealP = 0;
+float vzrealI = 0;
+float vzrealD = 0;
+
+float vzrealPID = 0;
+
+float AltitError = 0;
 float vzrealError = 0;
 float vzrealErrorTotal = 0;
 
@@ -275,10 +287,14 @@ unsigned long int bmplast = 0;
 
 void initKPKIKD()
 {
-  #ifdef TuningRadio
-    KYawRateP=0,KYawRateI=0,KYawRateD=0;
-    KPitchRateP=0,KPitchRateI=0,KPitchRateD=0,KPitchP=0,KPitchI=0;
-    KRollRateP=0,KRollRateI=0,KRollRateD=0,KRollP=0,KRollI=0;
+  #ifdef TuningRadioAttitude
+    KYawRateP=0;KYawRateI=0;KYawRateD=0;KYawP
+    KPitchRateP=0;KPitchRateI=0;KPitchRateD=0;KPitchP=0;
+    KRollRateP=0;KRollRateI=0;KRollRateD=0;KRollP=0;
+  #endif
+   #ifdef TuningRadioAltitude
+    //KvzrealP=0;KvzrealI=0;KvzrealD=0;
+    KYawP=0;KYawRateP=0;KYawRateI=0;KYawRateD=0;
   #endif
 }
 
@@ -480,14 +496,18 @@ void loop() {
 
         if( turnoff == 0 )
         {
-           Throttle = ( ( ((float)(data[1] & 0x00ff)) * 4.3 ) * 0.7 ) + 900 ;
-           vzrealReq  =  ((data[6]*1.0)/100.0);
+           Throttle   = ( ( ((float)(data[1] & 0x00ff)) * 4.3 ) * 0.7 ) + 900 ; // at hover Throttle requirement is 550
+           AltitReq  +=  ((data[6]*1.0)/5000.0);
            YawReq    +=  ((data[5])/30.0) ; 
            PitchReq   =  ((data[3]*2.5)/3.0)  + PitchTrim ;
            RollReq    =  ((data[2]*2.5)/3.0)  + RollTrim  ;
 
            if( YawReq >= 180 ){ YawReq = YawReq - 360; }
            else if( YawReq <= -180 ){ YawReq = YawReq + 360; }
+           if( AltitReq < 0 )
+           {
+            AltitReq = 0;
+           }
          }
          else
          {
@@ -508,23 +528,31 @@ void loop() {
 
          if( Throttle > 970 )
          {
+              AltitError = AltitReq - Altit;
               YawError   = YawReq   - ypr[0];
               if( YawError > 180 ){ YawError = YawError - 360; }
               else if( YawError < -180 ){ YawError = YawError + 360; }
               PitchError = PitchReq - ypr[1];
               RollError  = RollReq  - ypr[2];
 
+              vzrealReq    = KAltitP * AltitError ;
+              if( vzrealReq > 0.6 ){ vzrealReq = 0.6; }else if( vzrealReq < -0.6 ){ vzrealReq = -0.6; }
               YawRateReq   = KYawP   * YawError   ;
               PitchRateReq = KPitchP * PitchError ;
               RollRateReq  = KRollP  * RollError  ;
-              
+
+              vzrealError    = + vzreal     - vzrealReq    ;
               YawRateError   = + yprRate[0] - YawRateReq   ;
               PitchRateError = + yprRate[1] - PitchRateReq ;
               RollRateError  = + yprRate[2] - RollRateReq  ;
-               
+
+              vzrealP    =   vzrealError    *  KvzrealP    ;
               YawRateP   =   YawRateError   *  KYawRateP   ;
               PitchRateP =   PitchRateError *  KPitchRateP ;
               RollRateP  =   RollRateError  *  KRollRateP  ;
+
+              vzrealErrorTotal += (vzrealError);
+              vzrealI = vzrealErrorTotal * KvzrealI * dt;
        
               YawRateErrorTotal += (YawRateError);
               YawRateI = YawRateErrorTotal * KYawRateI * dt;
@@ -540,6 +568,7 @@ void loop() {
               PitchRateErrorForDerivative = ( + yprRate[1] /* - PitchReq */ );
               RollRateErrorForDerivative  = ( + yprRate[2] /* - RollReq  */ );
 
+              vzrealD     = azreal * KvzrealD;
               YawRateD    = ( ( YawRateErrorForDerivative   - YawRateErrorForDerivativeOld   ) / dt ) * KYawRateD   ;
               PitchRateD  = ( ( PitchRateErrorForDerivative - PitchRateErrorForDerivativeOld ) / dt ) * KPitchRateD ;
               RollRateD   = ( ( RollRateErrorForDerivative  - RollRateErrorForDerivativeOld  ) / dt ) * KRollRateD  ;
@@ -547,10 +576,18 @@ void loop() {
               YawRateErrorForDerivativeOld    =  YawRateErrorForDerivative   ;
               PitchRateErrorForDerivativeOld  =  PitchRateErrorForDerivative ;
               RollRateErrorForDerivativeOld   =  RollRateErrorForDerivative  ;
-          
+
+              DifferentialThrottle =  vzrealP + vzrealI + vzrealD ;
+              
               YawRatePID    =  YawRateP    +  YawRateI    +  YawRateD    ;
               PitchRatePID  =  PitchRateP  +  PitchRateI  +  PitchRateD  ;
               RollRatePID   =  RollRateP   +  RollRateI   +  RollRateD   ;
+
+              if( DifferentialThrottle <= -400 || DifferentialThrottle >= 400 )
+              {
+                if( DifferentialThrottle > 0 ){DifferentialThrottle = 400;}
+                else{DifferentialThrottle = -400;}
+              }
         
               if( YawRatePID <= -300 || YawRatePID >= 300 )
               {
@@ -569,17 +606,11 @@ void loop() {
                 if( RollRatePID > 0 ){RollRatePID = 300;}
                 else{RollRatePID = -300;}
               }
-              
-              if( DifferentialThrottle <= -120 || DifferentialThrottle >= 120 )
-              {
-                if( DifferentialThrottle > 0 ){DifferentialThrottle = 120;}
-                else{DifferentialThrottle = -120;}
-              }
 
-              LeftFrontMotor  = Throttle + PitchRatePID - RollRatePID + YawRatePID + DifferentialThrottle;
-              RightFrontMotor = Throttle + PitchRatePID + RollRatePID - YawRatePID + DifferentialThrottle;
-              LeftBackMotor   = Throttle - PitchRatePID - RollRatePID - YawRatePID + DifferentialThrottle;
-              RightBackMotor  = Throttle - PitchRatePID + RollRatePID + YawRatePID + DifferentialThrottle;
+              LeftFrontMotor  = Throttle + PitchRatePID - RollRatePID + YawRatePID - DifferentialThrottle;
+              RightFrontMotor = Throttle + PitchRatePID + RollRatePID - YawRatePID - DifferentialThrottle;
+              LeftBackMotor   = Throttle - PitchRatePID - RollRatePID - YawRatePID - DifferentialThrottle;
+              RightBackMotor  = Throttle - PitchRatePID + RollRatePID + YawRatePID - DifferentialThrottle;
 
               float maxval = maximum4(LeftFrontMotor,RightFrontMotor,LeftBackMotor,RightBackMotor );
 
@@ -621,6 +652,7 @@ void loop() {
 
             YawReq = ypr[0];
             vzrealReq = 0;
+            AltitReq = 0;
           }
           
           MotorLeftFront .writeMicroseconds ( LeftFrontMotor  );
@@ -708,6 +740,22 @@ void loop() {
             case 9 :
               {
                 KRollRateD = Temp;
+                 break;
+              }
+
+            case 10 :
+              {
+                KvzrealP = Temp;
+                 break;
+              }
+            case 11 :
+              {
+                KvzrealI = Temp;
+                 break;
+              }
+            case 12 :
+              {
+                KvzrealD = Temp;
                  break;
               }
 
@@ -897,7 +945,7 @@ void predictAltitude()
   
   lastcall = micros();
 
-  Serial.print  (-20);
+ /* Serial.print  (-20);
   Serial.print  (" ");
   Serial.print  ( 0 );
   Serial.print  (" ");
@@ -905,12 +953,14 @@ void predictAltitude()
   Serial.print  (" ");
   Serial.print  (Altit  * 100);
   Serial.print  (" ");
+  Serial.print  (ultraheight  * 100);
+  Serial.print  (" ");
   Serial.print  (vzreal * 100);
   Serial.print  (" ");
   //Serial.print  (azreal * 100);
   Serial.print  (" ");
   //Serial.print  (dtlocal,10);
-  Serial.println();
+  Serial.println();*/
 }
 
 float X0,X1;           // sateextimations
