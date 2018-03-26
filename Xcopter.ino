@@ -51,7 +51,7 @@ unsigned long int ultraheightlast;
 double zcos; // zcos is cosine of angle between local z axis and global z axis
 void signalgot()
 {
-  #define lpultra 0.95
+  #define lpultra 0.9
   float templocal = ( (micros() - ultralast) * 0.00034049 - ultraheight - ultratrim );
   ultraheight = ultraheight * lpultra + templocal * zcos * ( 1 - lpultra );
   ultraheightlast = micros();
@@ -222,7 +222,7 @@ float YawRateErrorTotal,PitchRateErrorTotal,RollRateErrorTotal;
 
 // #define TuningOff
 // #define TuningRadioAttitude
- #define TuningRadioAltitude
+// #define TuningRadioAltitude
 // #define printMPUDMPdata
  
 // manipulate
@@ -293,7 +293,7 @@ void initKPKIKD()
     KRollRateP=0;KRollRateI=0;KRollRateD=0;KRollP=0;
   #endif
    #ifdef TuningRadioAltitude
-    //KvzrealP=0;KvzrealI=0;KvzrealD=0;
+    KvzrealP=0;KvzrealI=0;KvzrealD=0;
     KYawP=0;KYawRateP=0;KYawRateI=0;KYawRateD=0;
   #endif
 }
@@ -535,9 +535,9 @@ void loop() {
               PitchError = PitchReq - ypr[1];
               RollError  = RollReq  - ypr[2];
 
-              vzrealReq    = KAltitP * AltitError ;
+              vzrealReq    = 0;//KAltitP * AltitError ;
               if( vzrealReq > 0.6 ){ vzrealReq = 0.6; }else if( vzrealReq < -0.6 ){ vzrealReq = -0.6; }
-              YawRateReq   = KYawP   * YawError   ;
+              YawRateReq   = 0;//KYawP   * YawError   ;
               PitchRateReq = KPitchP * PitchError ;
               RollRateReq  = KRollP  * RollError  ;
 
@@ -657,13 +657,13 @@ void loop() {
           
           MotorLeftFront .writeMicroseconds ( LeftFrontMotor  );
           MotorRightFront.writeMicroseconds ( RightFrontMotor );
-          MotorLeftBack .writeMicroseconds  ( LeftBackMotor   );
+          MotorLeftBack  .writeMicroseconds ( LeftBackMotor   );
           MotorRightBack .writeMicroseconds ( RightBackMotor  );
           
           writestatus(0);
     }
 
-    if( micros() - ultralast >= 30 )
+    if( micros() - ultralast >= 60000 )
     {
       updateultraheight();
     }
@@ -815,26 +815,22 @@ void loop() {
             bmpneed = bmp.getPressure(Pressure,Temperature);
             if( bmpneed !=0 )
             {
-                #define lpbaro 0.7
-                #define lpbaroground 0.99
-                if( baroheightlast == 0 )
-                {
-                  GroundPressure = Pressure;
-                  PressureAveraged = Pressure;
-                }
-                if( Altit <= 0.02 && micros()-botinitialized <= 5000000)
-                {
-                  GroundPressure = GroundPressure * lpbaroground + Pressure * ( 1-lpbaroground );
-                }
-                PressureAveraged = PressureAveraged * lpbaro + Pressure * (1-lpbaro);
-                baroheight = 44330 * ( 1 - pow(PressureAveraged/GroundPressure,1/5.255) );
+              #define lpbaro 0.95
+              #define lpbaroground 0.9
+              if( baroheightlast == 0 )
+              {
+                GroundPressure = Pressure;
+                PressureAveraged = Pressure;
+              }
+              if( Altit <= 0.02 && Altit >= -0.02 )
+              {
+                GroundPressure = GroundPressure * lpbaroground + Pressure * ( 1-lpbaroground );
+              }
+              PressureAveraged = PressureAveraged * lpbaro + Pressure * (1-lpbaro);
+              baroheight = 44330 * ( 1 - pow(PressureAveraged/GroundPressure,1/5.255) );
 
-                updateAltitude();
+              updateAltitude();
                 
-                if( baroheight == NAN )
-                {
-                  baroheight = 0;
-                }
               bmpneed  = 30;
               bmpstate = 0;
               baroheightlast = micros();
@@ -857,7 +853,7 @@ void loop() {
       {
         Serial.println("bmp has failed");
         bmpstate = 0;
-        bmpneed = 500;
+        bmpneed = 200;
         bmplast  = millis();
       }
     
@@ -918,6 +914,7 @@ unsigned long int lastcall = 0;
 float P_00,P_01,P_10,P_11;// prior errors
 float X_0,X_1;            // model estimates
 float Q = 0.03;           // accelerometer noise
+float lowpassed = 0;
 void predictAltitude()
 {
   float dtlocal = ((float)( micros() - lastcall )) / 1000000 ;
@@ -927,14 +924,14 @@ void predictAltitude()
   }
   
   azreal = accez;
-  X_1    = X_1 * 0.99 + azreal * dtlocal;
-  vzreal = X_1;
+  X_1    = X_1 + azreal * dtlocal;
+  vzreal = vzreal * 0.95 + X_1 * 0.05;
   X_0    = X_0 + X_1 * dtlocal + 0.5 * azreal * dtlocal * dtlocal;
-  Altit  = X_0;
+  Altit  = Altit * 0.95 + X_0 * 0.05;
 
   float T00,T01,T10,T11;    // Temporary matrix
   T00 = P_00 + ( P_01 + P_10 ) * dtlocal + P_11 * dtlocal * dtlocal + Q;
-  T01 = P_01 + P_11 * dtlocal;
+  T01 = P_01 + P_11 * dtlocal + Q * dtlocal;
   T10 = P_10 + P_11 * dtlocal;
   T11 = P_11 + Q;
 
@@ -945,19 +942,23 @@ void predictAltitude()
   
   lastcall = micros();
 
- /* Serial.print  (-20);
+  /*Serial.print  (-20);
   Serial.print  (" ");
   Serial.print  ( 0 );
   Serial.print  (" ");
   Serial.print  (+20);
   Serial.print  (" ");
-  Serial.print  (Altit  * 100);
+  //Serial.print  (Altit  * 100);
   Serial.print  (" ");
-  Serial.print  (ultraheight  * 100);
+  //Serial.print  (ultraheight  * 100);
+  Serial.print  (" ");
+  //Serial.print  (baroheight  * 100);
   Serial.print  (" ");
   Serial.print  (vzreal * 100);
   Serial.print  (" ");
-  //Serial.print  (azreal * 100);
+  //Serial.print  (azreal * 1000);
+  Serial.print  (" ");
+  //Serial.print  (lowpassed * 1000);lowpassed = lowpassed * 0.999 +  * 0.001;
   Serial.print  (" ");
   //Serial.print  (dtlocal,10);
   Serial.println();*/
@@ -965,7 +966,7 @@ void predictAltitude()
 
 float X0,X1;           // sateextimations
 float P00,P01,P10,P11; // state estimation errors
-float R = 1.5;        // noise from arometer
+float R = 50.0;        // noise from barometer
 
 void updateAltitude()
 {
@@ -974,14 +975,12 @@ void updateAltitude()
   {
     float fraction = pow((Altit / 1.5),2);
     Z0 = baroheight * fraction + ultraheight * ( 1 - fraction );
-    R = 0.003;
-    Q = 0.03;
+    R = 0.03;
   }
   else
   {
     Z0 = baroheight;
-    R = 1.5;
-    Q = 0.03;
+    R = 50;
   }
   float Y0 = Z0 - X_0;
 
@@ -991,13 +990,13 @@ void updateAltitude()
   X0 = X_0 + K00 * Y0;
   X1 = X_1 + K10 * Y0;
 
-  P00 = P_00 * ( 1 - K00 );
-  P01 = P_01 * ( 1 - K00 );
+  P00 = P_00 * ( 1-K00 );
+  P01 = P_01 * ( 1-K00 );
   P10 = P_00 * ( -K10 ) + P_10;
   P11 = P_10 * ( -K10 ) + P_11;
 
-  Altit  = X0;
-  vzreal = X1;
+  Altit  = Altit * 0.95 + X0 * 0.05;
+  vzreal = vzreal * 0.95 + X1 * 0.05;
 
   X_0 = X0;
   X_1 = X1;
