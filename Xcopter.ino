@@ -1,4 +1,4 @@
-// 2:17 pm 25 mar'18
+// 11:50 pm 26 mar'18
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -9,6 +9,8 @@
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 
+unsigned long long int botinitialized = 0;
+
 SFE_BMP180 bmp;
 RF24 radio(4,10);
 MPU6050 mpu;
@@ -16,7 +18,7 @@ MPU6050 mpu;
 #define mpu_int 2
 #define echo    3
 #define trig    7
-#define ultratrim 0.23
+#define ultratrim 0.11
 
 // received data from nrf
 int datasize = 13;
@@ -52,8 +54,15 @@ double zcos; // zcos is cosine of angle between local z axis and global z axis
 void signalgot()
 {
   #define lpultra 0.9
-  float templocal = ( (micros() - ultralast) * 0.00034049 - ultraheight - ultratrim );
-  ultraheight = ultraheight * lpultra + templocal * zcos * ( 1 - lpultra );
+  float templocal = ( (micros() - ultralast) * 0.00017025 ) - ultratrim ;
+  if( botinitialized <= 2000 )
+  {
+    ultraheight = 0;
+  }
+  else
+  {
+    ultraheight = ultraheight * lpultra + templocal * ( 1 - lpultra );
+  }
   ultraheightlast = micros();
 }
 
@@ -83,7 +92,7 @@ void updateultraheight()
   ultralast = micros();
 }
 
-unsigned long long int botinitialized = 0;
+
 void setup()
 {
     Wire.begin();
