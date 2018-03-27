@@ -1,4 +1,4 @@
-// 10:27 am 27 mar'18
+// 4:50 pm 27 mar'18
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -407,9 +407,13 @@ void gethorizonypr(Quaternion q)
    * tilt each axis to make them point ground, all axis ( +x,-x,+y,+z,-y,-z ) will give different 9.8 m/s2
    * so linearize them or use the below linearized values at your own risk
    */
+  /* accescaled[0] = acce[0] * 0.00120154 + 0.461993;
+     accescaled[1] = acce[1] * 0.00119140 + 0.243046;
+     accescaled[2] = acce[2] * 0.00119868 + 0.021582; */
+
   accescaled[0] = acce[0] * 0.00120154 + 0.461993;
   accescaled[1] = acce[1] * 0.00119140 + 0.243046;
-  accescaled[2] = acce[2] * 0.00119868 + 0.021582;
+  accescaled[2] = acce[2] * 0.00119868 + 0.044582;
 
   accez =   ( newiz * accescaled[0] )   +  ( newjz * accescaled[1] )   +   ( newkz * accescaled[2] )   ; 
   accez = accez - 9.80665;
@@ -967,7 +971,7 @@ void predictAltitude()
   Serial.print  (" ");
   //Serial.print  (azreal * 1000);
   Serial.print  (" ");
-  //Serial.print  (lowpassed * 1000);lowpassed = lowpassed * 0.999 +  * 0.001;
+  //Serial.print  (lowpassed * 1000);lowpassed = lowpassed * 0.999 + azreal * 0.001;
   Serial.print  (" ");
   //Serial.print  (dtlocal,10);
   Serial.println();*/
