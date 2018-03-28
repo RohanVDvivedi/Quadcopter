@@ -1,4 +1,4 @@
-// 4:50 pm 27 mar'18
+// 9:12 am 28 mar'18
 #include <SFE_BMP180.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -272,7 +272,7 @@ float Altit;
 float vzrealReq;
 float AltitReq;
 
-float KvzrealP = 200.0,KvzrealI = 80.0,KvzrealD = 30.0;
+float KvzrealP = 300.0,KvzrealI = 270.0,KvzrealD = 20.0;
 float KAltitP = 1.0;
 
 float vzrealP = 0;
